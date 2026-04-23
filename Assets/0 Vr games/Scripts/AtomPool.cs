@@ -1,31 +1,43 @@
 // AtomPool.cs
-// Place one AtomPool component on a SpawnPoint GameObject for each atom type.
-// It keeps 1 atom visible at the spawn point at all times.
-// When the player grabs that atom, the pool spawns the next one automatically.
-// Atoms are never destroyed — they are disabled and returned to the pool.
+// Manages a fixed-size pool of atom GameObjects for a single AtomType.
+// Spawns one atom at the spawn point; when grabbed, schedules a replacement.
+// When pool is exhausted, recycles the oldest active atom.
+//
+// FIX SUMMARY:
+//   - ActivateAtom now calls SetActive(true) BEFORE touching the Rigidbody.
+//     Previously the Rigidbody was configured while the object was inactive,
+//     which meant XRGrabInteractable.OnEnable() fired AFTER and reset our values.
+//   - Physics idle state (kinematic=true, gravity=false) is now owned entirely
+//     by AtomController.SetIdleAtSpawnPoint(), keeping pool and controller in sync.
+//   - GetComponent calls are cached on prefab instantiation to avoid runtime overhead.
 
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
 public class AtomPool : MonoBehaviour
 {
+    // ─── Inspector ───────────────────────────────────────────────────────────────
+
     [Header("Pool Configuration")]
-    [Tooltip("Which atom type this spawn point manages")]
-    public AtomType atomType;
-
-    [Tooltip("The atom prefab to pool (must have AtomController)")]
+    public AtomType   atomType;
     public GameObject atomPrefab;
+    [Min(1)]
+    public int        poolSize  = 6;
 
-    [Tooltip("Maximum number of this atom that can be active at once")]
-    public int poolSize = 6;
+    [Header("Spawn")]
+    public Transform  spawnPoint;
+    [Min(0f)]
+    public float      spawnDelay = 2f;
 
-    [Header("Spawn Point")]
-    [Tooltip("Where new atoms appear. Defaults to this transform if not set.")]
-    public Transform spawnPoint;
+    // ─── Internal State ──────────────────────────────────────────────────────────
 
-    // Internal pool
-    private List<GameObject> _pool = new List<GameObject>();
-    private Queue<GameObject> _available = new Queue<GameObject>();
+    // All atoms ever created (active or inactive)
+    private readonly List<AtomController>   _pool        = new List<AtomController>();
+    // Atoms currently visible/active in the scene, in spawn order
+    private readonly Queue<AtomController>  _activeQueue = new Queue<AtomController>();
+
+    // ─── Unity Lifecycle ─────────────────────────────────────────────────────────
 
     private void Awake()
     {
@@ -33,78 +45,107 @@ public class AtomPool : MonoBehaviour
             spawnPoint = transform;
 
         InitPool();
+        SpawnNewAtom(); // place the first idle atom immediately
     }
+
+    // ─── Pool Initialisation ──────────────────────────────────────────────────────
 
     private void InitPool()
     {
         for (int i = 0; i < poolSize; i++)
         {
-            GameObject obj = Instantiate(atomPrefab, spawnPoint.position, spawnPoint.rotation);
+            GameObject obj = Instantiate(atomPrefab);
             obj.name = $"{atomType}_Atom_{i}";
 
-            var controller = obj.GetComponent<AtomController>();
+            AtomController controller = obj.GetComponent<AtomController>();
             if (controller != null)
             {
-                controller.atomType = atomType;
+                controller.atomType  = atomType;
                 controller.ownerPool = this;
             }
 
             obj.SetActive(false);
-            _pool.Add(obj);
-            _available.Enqueue(obj);
+            _pool.Add(controller); // cache controller reference; avoids GetComponent at runtime
         }
-
-        // Spawn the first atom visibly at the spawn point
-        SpawnNextAtSpawnPoint();
     }
 
+    // ─── Public API ───────────────────────────────────────────────────────────────
+
     /// <summary>
-    /// Called by AtomController when the atom is grabbed.
-    /// Spawns the next available atom at the spawn point.
+    /// Called by AtomController when the idle spawn-point atom is grabbed.
+    /// Schedules a replacement atom to appear after spawnDelay seconds.
     /// </summary>
     public void OnAtomGrabbed()
     {
-        SpawnNextAtSpawnPoint();
+        StartCoroutine(SpawnWithDelay());
     }
 
-    /// <summary>
-    /// Returns a disabled atom back to the pool so it can be reused.
-    /// Called when a mix completes and atoms are recycled.
-    /// </summary>
-    public void ReturnAtom(GameObject atom)
-    {
-        if (atom == null) return;
-        atom.SetActive(false);
-        atom.transform.position = spawnPoint.position;
-        atom.transform.rotation = spawnPoint.rotation;
+    // ─── Spawn Logic ──────────────────────────────────────────────────────────────
 
-        // Reset Rigidbody velocity if present
-        var rb = atom.GetComponent<Rigidbody>();
-        if (rb != null)
+    private IEnumerator SpawnWithDelay()
+    {
+        yield return new WaitForSeconds(spawnDelay);
+        SpawnNewAtom();
+    }
+
+    private void SpawnNewAtom()
+    {
+        AtomController controller;
+
+        if (_activeQueue.Count >= poolSize)
         {
-            rb.linearVelocity = Vector3.zero;
-            rb.angularVelocity = Vector3.zero;
+            // Pool exhausted — forcibly recycle the oldest active atom
+            controller = _activeQueue.Dequeue();
+            controller.ForceResetFromPool();
+            controller.gameObject.SetActive(false); // ensure clean reactivation below
+        }
+        else
+        {
+            controller = GetInactiveAtom();
         }
 
-        _available.Enqueue(atom);
-    }
-
-    private void SpawnNextAtSpawnPoint()
-    {
-        if (_available.Count == 0)
+        if (controller == null)
         {
-            Debug.Log($"[AtomPool] Pool exhausted for {atomType}. Max pool size: {poolSize}");
+            Debug.LogError($"[AtomPool] No available atom for {atomType}. Increase pool size.");
             return;
         }
 
-        GameObject next = _available.Dequeue();
-        next.transform.position = spawnPoint.position;
-        next.transform.rotation = spawnPoint.rotation;
-        next.SetActive(true);
+        ActivateAtom(controller);
+        _activeQueue.Enqueue(controller);
+    }
 
-        // Mark it as the "idle at spawn point" atom
-        var controller = next.GetComponent<AtomController>();
-        if (controller != null)
-            controller.SetIdleAtSpawnPoint(true);
+    private AtomController GetInactiveAtom()
+    {
+        foreach (var controller in _pool)
+        {
+            if (!controller.gameObject.activeSelf)
+                return controller;
+        }
+        return null; // caller handles null
+    }
+
+    /// <summary>
+    /// Positions the atom and activates it.
+    ///
+    /// ORDER IS CRITICAL:
+    ///   1. Set transform (while still inactive — safe, no physics events)
+    ///   2. SetActive(true)  ← XRGrabInteractable.OnEnable() fires here and
+    ///                          snapshots the Rigidbody state
+    ///   3. SetIdleAtSpawnPoint() ← runs AFTER OnEnable, so our kinematic=true
+    ///                              state is applied LAST and sticks correctly
+    /// </summary>
+    private void ActivateAtom(AtomController controller)
+    {
+        GameObject obj = controller.gameObject;
+
+        // Step 1 — position while inactive (no physics events, safe)
+        obj.transform.position = spawnPoint.position;
+        obj.transform.rotation = spawnPoint.rotation;
+
+        // Step 2 — activate (XRGrabInteractable.OnEnable snapshots Rigidbody here)
+        obj.SetActive(true);
+
+        // Step 3 — apply idle physics AFTER OnEnable so our values win
+        controller.SetIdleAtSpawnPoint(true);
     }
 }

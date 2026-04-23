@@ -17,5 +17,11 @@ MonoBehaviour:
     formula: "H\u2082O"
     bondType: Covalent
     discoveryText: "2H + 1O = H\u2082O"
-    moleculePrefab: {fileID: 0}
+    moleculePrefab: {fileID: 3080421538056557038, guid: fbc1484d74f62944e9b141f67b9f4ac5, type: 3}
     requiredAtoms: 000000000000000001000000
+  - moleculeName: Hydrogen Gas
+    formula: H2
+    bondType: Single Covalent
+    discoveryText: 2H
+    moleculePrefab: {fileID: 2705962220431022848, guid: 6ea794d01ef408946b88668ca6019700, type: 3}
+    requiredAtoms: 0000000000000000
