@@ -34,6 +34,18 @@ URP (Universal Render Pipeline)
 - Basic interaction using XR Toolkit
 - Simple visual feedback for reactions
 
+--- 
+
+
+- ## AI Tools Used
+This project was built with the help of AI tools during development:
+
+- Claude was mainly used for planning the system and helping with core logic/code structure
+- ChatGPT was used for researching features and modifying code for new updates and improvements
+- ChatGPT also suggested tools like MolView to find and understand 3D molecular structures, which I then recreated manually in Unity
+- Both Claude and ChatGPT helped me set up and test the VR system without a headset by suggesting the XR Device Simulator
+
+
 ---
 
 ## Notes
