@@ -14,14 +14,110 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::MoleculeDatabase
   recipes:
   - moleculeName: Water
-    formula: "H\u2082O"
+    formula: H2O
     bondType: Covalent
-    discoveryText: "2H + 1O = H\u2082O"
-    moleculePrefab: {fileID: 3080421538056557038, guid: fbc1484d74f62944e9b141f67b9f4ac5, type: 3}
+    discoveryText: 2H + 1O
+    moleculePrefab: {fileID: 7949966440195633306, guid: d4f0841b049c8cf499b27d86e073ffb8, type: 3}
     requiredAtoms: 000000000000000001000000
   - moleculeName: Hydrogen Gas
     formula: H2
     bondType: Single Covalent
     discoveryText: 2H
-    moleculePrefab: {fileID: 2705962220431022848, guid: 6ea794d01ef408946b88668ca6019700, type: 3}
+    moleculePrefab: {fileID: 8660085202056200507, guid: 63da98c3ae70cd64796c0c5ab3e26d66, type: 3}
     requiredAtoms: 0000000000000000
+  - moleculeName: Oxygen Gas
+    formula: O2
+    bondType: Double Covalent
+    discoveryText: 2O
+    moleculePrefab: {fileID: 6282102496537606822, guid: 4c45aad28eb64f249bfa9ca127a900f3, type: 3}
+    requiredAtoms: 0100000001000000
+  - moleculeName: Nitrogen Gas
+    formula: "N\u2082"
+    bondType: Triple Covalent
+    discoveryText: '2N '
+    moleculePrefab: {fileID: 128941455077463364, guid: bdfa20bdc192f294d8e0869e10cdf29d, type: 3}
+    requiredAtoms: 0300000003000000
+  - moleculeName: Ammonia
+    formula: NH3
+    bondType: 'Covalent '
+    discoveryText: '1N + 3H '
+    moleculePrefab: {fileID: 326572188973594559, guid: 4c5fb446246da7f41b1955a50cd5b511, type: 3}
+    requiredAtoms: 03000000000000000000000000000000
+  - moleculeName: Carbon Dioxide
+    formula: CO2
+    bondType: Double Covalent
+    discoveryText: '1C + 2O '
+    moleculePrefab: {fileID: 6281827556939366452, guid: c032084fee2f3544eb57a6a15fe3f950, type: 3}
+    requiredAtoms: 020000000100000001000000
+  - moleculeName: Methane
+    formula: CH4
+    bondType: Covalent
+    discoveryText: 1C + 4H
+    moleculePrefab: {fileID: 3731961567324729661, guid: d0e859192a2a6c247987abeb91ed31af, type: 3}
+    requiredAtoms: 0200000000000000000000000000000000000000
+  - moleculeName: Hydrogen Cyanide
+    formula: HCN
+    bondType: 'Triple Covalent '
+    discoveryText: 1H + 1C + 1N
+    moleculePrefab: {fileID: 3543245717862463426, guid: 96ea4c60380336640ad0a051ddc1df7f, type: 3}
+    requiredAtoms: 000000000200000003000000
+  - moleculeName: Nitric Oxide
+    formula: NO
+    bondType: 'Covalent '
+    discoveryText: '1N + 1O '
+    moleculePrefab: {fileID: 6880044909255355023, guid: df709fa7b7eac1e47a88a4a9917467a3, type: 3}
+    requiredAtoms: 0300000001000000
+  - moleculeName: Hydroxyl Radical
+    formula: 'OH '
+    bondType: 'Covalent '
+    discoveryText: '1O + 1H '
+    moleculePrefab: {fileID: 5811678741267982190, guid: 80948ce89b554684997c319ddc97f2de, type: 3}
+    requiredAtoms: 0100000000000000
+  - moleculeName: Carbon Monoxide
+    formula: 'CO '
+    bondType: 'Triple Covalent  '
+    discoveryText: '1C + 1O '
+    moleculePrefab: {fileID: 4094470011822649916, guid: a1384339a8bd6ea4db1c969052f7463f, type: 3}
+    requiredAtoms: 0200000001000000
+  - moleculeName: Diazene
+    formula: N2H2
+    bondType: 'Double Covalent '
+    discoveryText: '2N + 2H '
+    moleculePrefab: {fileID: 3527663682758333341, guid: b36568cc5dd18f946b3ee9a3a1fa205a, type: 3}
+    requiredAtoms: 03000000030000000000000000000000
+  - moleculeName: Hydrazine
+    formula: N2H4
+    bondType: 'Covalent '
+    discoveryText: '2N + 4H '
+    moleculePrefab: {fileID: 7090530907028848050, guid: e28122b36f52b684caaf7a6b895606ec, type: 3}
+    requiredAtoms: 030000000300000000000000000000000000000000000000
+  - moleculeName: Cyanogen
+    formula: C2N2
+    bondType: 'Triple Covalent '
+    discoveryText: '2C + 2N '
+    moleculePrefab: {fileID: 3039917482503926825, guid: f260d4b5cf26f7c41a6ba06dca54e50b, type: 3}
+    requiredAtoms: 02000000020000000300000003000000
+  - moleculeName: Formaldehyde
+    formula: CH2O
+    bondType: 'Double Covalent '
+    discoveryText: 1C + 2H + 1O
+    moleculePrefab: {fileID: 1885435791817577587, guid: aafabd698d37c454b98e86c75ac1e2a5, type: 3}
+    requiredAtoms: 02000000000000000000000001000000
+  - moleculeName: Methanol
+    formula: CH4O
+    bondType: 'Covalent '
+    discoveryText: '1C + 4H + 1O '
+    moleculePrefab: {fileID: 7764978791875098749, guid: 7470b5d035d516240ac9d9bf52a22923, type: 3}
+    requiredAtoms: 020000000000000000000000000000000000000001000000
+  - moleculeName: Urea
+    formula: CH4N2O
+    bondType: 'Covalent '
+    discoveryText: '1C + 4H + 2N + 1O '
+    moleculePrefab: {fileID: 5909538216638353420, guid: 4e93d9472f9a9f14e9855d0ed45be0e7, type: 3}
+    requiredAtoms: 0200000000000000000000000000000000000000030000000300000001000000
+  - moleculeName: Glycine
+    formula: C2H5NO2
+    bondType: 'Covalent '
+    discoveryText: '2C + 5H + 1N + 2O '
+    moleculePrefab: {fileID: 941813621722978166, guid: a0678fa461fc2f347a0e6b63d3ddbdda, type: 3}
+    requiredAtoms: 02000000020000000000000000000000000000000000000000000000030000000100000001000000

@@ -1,7 +1,4 @@
-// AudioManager.cs
-// Simple singleton AudioManager for VR Molecular Lab.
-// Plays success / failure / grab sounds via AudioSource.
-// Attach to a persistent GameObject in the scene.
+
 
 using UnityEngine;
 
@@ -14,6 +11,9 @@ public class AudioManager : MonoBehaviour
     public AudioClip mixFailClip;
     public AudioClip atomGrabClip;
     public AudioClip atomReleaseClip;
+
+    [Tooltip("Sound played the moment atoms are consumed and the mix reaction triggers")]
+    public AudioClip atomMixClip;
 
     [Header("Volumes")]
     [Range(0f, 1f)] public float masterVolume = 1f;
@@ -53,8 +53,14 @@ public class AudioManager : MonoBehaviour
             PlayClip(mixFailClip);
     }
 
-    public void PlayGrab() => PlayClip(atomGrabClip);
+    public void PlayGrab()    => PlayClip(atomGrabClip);
     public void PlayRelease() => PlayClip(atomReleaseClip);
+
+    /// <summary>
+    /// Called by MixingZone the moment atoms are consumed (particle + mix moment).
+    /// Assign atomMixClip in the Inspector for a "whoosh/dissolve" type sound.
+    /// </summary>
+    public void PlayMix()     => PlayClip(atomMixClip);
 
     private void PlayClip(AudioClip clip)
     {

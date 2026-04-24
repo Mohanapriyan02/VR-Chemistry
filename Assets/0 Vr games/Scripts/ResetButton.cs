@@ -2,16 +2,17 @@
 
 using UnityEngine;
 using UnityEngine.XR.Interaction.Toolkit;
+using UnityEngine.XR.Interaction.Toolkit.Interactables;
 
-public class MixButton : MonoBehaviour
+public class ResetButton : MonoBehaviour
 {
-    [Tooltip("The MixingZone this button triggers")]
+    [Tooltip("The MixingZone this button clears")]
     public MixingZone mixingZone;
 
     [Tooltip("Optional visual press effect transform (scales down on press)")]
     public Transform buttonVisual;
 
-    private UnityEngine.XR.Interaction.Toolkit.Interactables.XRSimpleInteractable _interactable;
+    private XRSimpleInteractable _interactable;
     private Vector3 _originalScale;
 
     private void Awake()
@@ -19,7 +20,7 @@ public class MixButton : MonoBehaviour
         if (buttonVisual != null)
             _originalScale = buttonVisual.localScale;
 
-        _interactable = GetComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRSimpleInteractable>();
+        _interactable = GetComponent<XRSimpleInteractable>();
         if (_interactable != null)
         {
             _interactable.selectEntered.AddListener(OnPressed);
@@ -38,28 +39,26 @@ public class MixButton : MonoBehaviour
 
     private void OnPressed(SelectEnterEventArgs args)
     {
-        TriggerMix();
+        TriggerReset();
 
-        // Press visual
         if (buttonVisual != null)
             buttonVisual.localScale = _originalScale * 0.88f;
     }
 
     private void OnReleased(SelectExitEventArgs args)
     {
-        // Restore visual
         if (buttonVisual != null)
             buttonVisual.localScale = _originalScale;
     }
 
     /// <summary>
-    /// Public so Unity UI Button OnClick can also call this.
+    /// Public so a Unity UI Button OnClick can also call this.
     /// </summary>
-    public void TriggerMix()
+    public void TriggerReset()
     {
         if (mixingZone != null)
-            mixingZone.TryMix();
+            mixingZone.ResetZone();
         else
-            Debug.LogWarning("[MixButton] No MixingZone assigned!");
+            Debug.LogWarning("[ResetButton] No MixingZone assigned!");
     }
 }

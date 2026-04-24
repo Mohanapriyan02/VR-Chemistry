@@ -1,16 +1,4 @@
-// AtomController.cs
-// Attach this to every atom prefab (H, O, C, N spheres).
-// Works with XR Interaction Toolkit's XRGrabInteractable.
-// Handles: atom identity, grab events, mixing zone entry/exit, visual highlight, pool callback.
-//
-// FIX SUMMARY:
-//   - Spawned atoms now use isKinematic=true so they float at spawn point cleanly.
-//   - On grab: isKinematic=false + useGravity=true applied ONE FRAME after XRI
-//     takes control (via coroutine), so XRI's internal state snapshot cannot undo us.
-//   - On release: same one-frame-delay coroutine re-applies useGravity=true +
-//     isKinematic=false AFTER XRI restores its cached snapshot.
-//   - Removed the per-frame Update() hack that was fighting XRI every tick.
-//   - ForceResetFromPool correctly restores the idle kinematic state.
+
 
 using System.Collections;
 using UnityEngine;
@@ -26,28 +14,27 @@ public class AtomController : MonoBehaviour
     [Tooltip("Select which element this atom represents")]
     public AtomType atomType;
 
-    [Header("Visual")]
-    [Tooltip("Renderer to tint when highlighted")]
+    [Header("Visual — Material Swap")]
+    [Tooltip("Renderer on the atom sphere")]
     public Renderer atomRenderer;
 
-    [Tooltip("Default material color (set automatically from prefab on first enable)")]
-    public Color defaultColor = Color.white;
+    [Tooltip("Default (idle) material — assigned automatically from the prefab's current material on Awake")]
+    public Material defaultMaterial;
 
-    [Tooltip("Highlight color when grabbed or inside mixing zone")]
-    public Color highlightColor = Color.yellow;
+    [Tooltip("Glow material applied when the atom is grabbed or inside a mixing zone")]
+    public Material glowMaterial;
 
     // ─── Internal State ──────────────────────────────────────────────────────────
 
-    // Set by AtomPool — used to call back when grabbed from spawn point
     [HideInInspector] public AtomPool ownerPool;
 
     private bool _isIdleAtSpawnPoint = false;
     private bool _isGrabbed          = false;
+    private bool _isInMixZone        = false;
     private MixingZone _currentMixingZone = null;
 
-    private XRGrabInteractable  _grabInteractable;
-    private Rigidbody           _rigidbody;
-    private MaterialPropertyBlock _propBlock;
+    private XRGrabInteractable _grabInteractable;
+    private Rigidbody          _rigidbody;
 
     // ─── Unity Lifecycle ─────────────────────────────────────────────────────────
 
@@ -55,13 +42,11 @@ public class AtomController : MonoBehaviour
     {
         _grabInteractable = GetComponent<XRGrabInteractable>();
         _rigidbody        = GetComponent<Rigidbody>();
-        _propBlock        = new MaterialPropertyBlock();
 
-        // Cache the prefab's base color once
-        if (atomRenderer != null)
-            defaultColor = atomRenderer.sharedMaterial.color;
+        // Cache the prefab's base material once if not already assigned in Inspector
+        if (defaultMaterial == null && atomRenderer != null)
+            defaultMaterial = atomRenderer.sharedMaterial;
 
-        // Subscribe to XRI events
         _grabInteractable.selectEntered.AddListener(OnGrabbed);
         _grabInteractable.selectExited.AddListener(OnReleased);
     }
@@ -75,12 +60,7 @@ public class AtomController : MonoBehaviour
     // ─── Pool API ────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Called by AtomPool.ActivateAtom() after positioning.
-    /// Sets the atom into the "idle at spawn point" state:
-    ///   isKinematic = true  → floats in place, no physics drift
-    ///   useGravity  = false → obviously no falling
-    /// XRGrabInteractable works fine with a kinematic Rigidbody for pickup;
-    /// it will switch to non-kinematic itself during grab tracking.
+    /// Called by AtomPool.ActivateAtom() — sets atom into idle floating state.
     /// </summary>
     public void SetIdleAtSpawnPoint(bool idle)
     {
@@ -88,31 +68,32 @@ public class AtomController : MonoBehaviour
 
         if (_rigidbody != null)
         {
-            _rigidbody.isKinematic = true;   // Float at spawn — XRI can grab kinematic objects
+            _rigidbody.isKinematic = true;
             _rigidbody.useGravity  = false;
             _rigidbody.linearVelocity  = Vector3.zero;
             _rigidbody.angularVelocity = Vector3.zero;
         }
+
+        SetGlow(false);
     }
 
     /// <summary>
-    /// Called by AtomPool when recycling an atom that may still be active/grabbed.
-    /// Fully resets physics and visual state before the pool re-activates it.
+    /// Called by AtomPool when forcibly recycling an active/grabbed atom.
     /// </summary>
     public void ForceResetFromPool()
     {
-        // Cancel any pending coroutines so stale callbacks don't fire
         StopAllCoroutines();
 
         _currentMixingZone  = null;
         _isGrabbed          = false;
+        _isInMixZone        = false;
         _isIdleAtSpawnPoint = false;
 
-        SetHighlight(false);
+        SetGlow(false);
 
         if (_rigidbody != null)
         {
-            _rigidbody.isKinematic = true;    // Will be set to idle properly by ActivateAtom → SetIdleAtSpawnPoint
+            _rigidbody.isKinematic = true;
             _rigidbody.useGravity  = false;
             _rigidbody.linearVelocity  = Vector3.zero;
             _rigidbody.angularVelocity = Vector3.zero;
@@ -120,8 +101,7 @@ public class AtomController : MonoBehaviour
     }
 
     /// <summary>
-    /// Called by MixingZone when a reaction completes.
-    /// Disables the atom and returns it to the pool's inactive list.
+    /// Called by MixingZone when a reaction completes — disables and returns to pool.
     /// </summary>
     public void RecycleToPool()
     {
@@ -129,8 +109,9 @@ public class AtomController : MonoBehaviour
 
         _currentMixingZone  = null;
         _isGrabbed          = false;
+        _isInMixZone        = false;
 
-        SetHighlight(false);
+        SetGlow(false);
 
         if (_rigidbody != null)
         {
@@ -146,46 +127,38 @@ public class AtomController : MonoBehaviour
     // ─── XR Grab Events ──────────────────────────────────────────────────────────
 
     private void OnGrabbed(SelectEnterEventArgs args)
-{
-    _isGrabbed = true;
-    SetHighlight(true);
-
-    // 🔊 PLAY SOUND
-    if (AudioManager.Instance != null)
-        AudioManager.Instance.PlayGrab();
-
-    if (_isIdleAtSpawnPoint && ownerPool != null)
     {
-        _isIdleAtSpawnPoint = false;
-        ownerPool.OnAtomGrabbed();
+        _isGrabbed = true;
+        UpdateGlowState();
+
+        if (AudioManager.Instance != null)
+            AudioManager.Instance.PlayGrab();
+
+        if (_isIdleAtSpawnPoint && ownerPool != null)
+        {
+            _isIdleAtSpawnPoint = false;
+            ownerPool.OnAtomGrabbed();
+        }
+
+        StartCoroutine(ApplyGrabbedPhysics());
     }
 
-    StartCoroutine(ApplyGrabbedPhysics());
-}
-
     private void OnReleased(SelectExitEventArgs args)
-{
-    _isGrabbed = false;
-    SetHighlight(false);
+    {
+        _isGrabbed = false;
+        UpdateGlowState();
 
-    // 🔊 PLAY SOUND
-    if (AudioManager.Instance != null)
-        AudioManager.Instance.PlayRelease();
+        if (AudioManager.Instance != null)
+            AudioManager.Instance.PlayRelease();
 
-    StartCoroutine(ApplyReleasedPhysics());
-}
+        StartCoroutine(ApplyReleasedPhysics());
+    }
 
-    // ─── Physics Coroutines (the core fix) ───────────────────────────────────────
+    // ─── Physics Coroutines ───────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Waits one frame after XRI grabs the atom, then sets physics for "being held":
-    ///   isKinematic = false  (XRI needs this for velocity/position tracking)
-    ///   useGravity  = true   (so it falls if XRI releases tracking)
-    /// </summary>
     private IEnumerator ApplyGrabbedPhysics()
     {
-        yield return null; // skip one frame — XRI finishes its own Rigidbody setup
-
+        yield return null;
         if (_rigidbody != null && _isGrabbed)
         {
             _rigidbody.isKinematic = false;
@@ -193,15 +166,9 @@ public class AtomController : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Waits one frame after XRI releases the atom, then sets physics for "falling":
-    ///   isKinematic = false  (must be false so gravity and collisions work)
-    ///   useGravity  = true   (atom drops naturally after release)
-    /// </summary>
     private IEnumerator ApplyReleasedPhysics()
     {
-        yield return null; // skip one frame — XRI finishes its own Rigidbody restore
-
+        yield return null;
         if (_rigidbody != null && !_isGrabbed)
         {
             _rigidbody.isKinematic = false;
@@ -216,9 +183,14 @@ public class AtomController : MonoBehaviour
         MixingZone zone = other.GetComponent<MixingZone>();
         if (zone != null && _currentMixingZone == null)
         {
-            _currentMixingZone = zone;
-            zone.OnAtomEntered(this);
-            SetHighlight(true);
+            // Zone will reject if full — only update state if accepted
+            bool accepted = zone.OnAtomEntered(this);
+            if (accepted)
+            {
+                _currentMixingZone = zone;
+                _isInMixZone = true;
+                UpdateGlowState();
+            }
         }
     }
 
@@ -229,17 +201,28 @@ public class AtomController : MonoBehaviour
         {
             zone.OnAtomExited(this);
             _currentMixingZone = null;
-            SetHighlight(_isGrabbed); // keep highlight if still grabbed
+            _isInMixZone = false;
+            UpdateGlowState();
         }
     }
 
-    // ─── Visual ───────────────────────────────────────────────────────────────────
+    // ─── Material / Glow ─────────────────────────────────────────────────────────
 
-    private void SetHighlight(bool on)
+    /// <summary>
+    /// Glow is ON when grabbed OR inside a mixing zone.
+    /// Glow is OFF when neither (idle or dropped outside zone).
+    /// </summary>
+    private void UpdateGlowState()
+    {
+        SetGlow(_isGrabbed || _isInMixZone);
+    }
+
+    private void SetGlow(bool on)
     {
         if (atomRenderer == null) return;
-        atomRenderer.GetPropertyBlock(_propBlock);
-        _propBlock.SetColor("_BaseColor", on ? highlightColor : defaultColor);
-        atomRenderer.SetPropertyBlock(_propBlock);
+
+        Material target = on ? glowMaterial : defaultMaterial;
+        if (target != null)
+            atomRenderer.material = target;
     }
 }

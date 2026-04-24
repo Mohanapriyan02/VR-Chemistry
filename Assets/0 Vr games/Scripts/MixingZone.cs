@@ -1,10 +1,6 @@
-// MixingZone.cs  — FIXED VERSION
-// Key fixes:
-//   1. Pool lookup rebuilt lazily before every TryMix (catches Inspector-assigned data)
-//   2. Detailed Debug.Log at every decision point so you can trace exactly where it fails
-//   3. moleculeName comparison is Trim()+ToLower() tolerant — catches space/caps mismatch
-//   4. Null checks on moleculeObject before SetActive
 
+
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -37,10 +33,23 @@ public class MixingZone : MonoBehaviour
     [Tooltip("Seconds result stays visible before auto-hiding (0 = never auto-hide)")]
     public float moleculeDisplayDuration = 8f;
 
-    // Atoms currently inside the trigger volume
-    private List<AtomController> _atomsInZone = new List<AtomController>();
+    [Header("Atom Capacity")]
+    [Tooltip("Maximum number of atoms allowed inside the zone at the same time (1-10)")]
+    [Range(1, 10)]
+    public int maxAtomsInZone = 10;
 
-    // Lookup rebuilt before every mix attempt
+    [Header("Particle Effect")]
+    [Tooltip("Drag a ParticleSystem GameObject from the scene hierarchy here. " +
+             "It will be enabled, played on a successful mix, then disabled after the delay.")]
+    public ParticleSystem mixParticleEffect;
+
+    [Tooltip("Seconds to wait before disabling the particle GameObject after playing. " +
+             "Set to 0 to use the particle system's own Stop Action / duration automatically.")]
+    public float particleDisableDelay = 3f;
+
+    // ─── Private State ────────────────────────────────────────────────────────
+
+    private List<AtomController> _atomsInZone = new List<AtomController>();
     private Dictionary<string, MoleculePoolEntry> _poolLookup;
 
     // Event: (recipe, success). UIManager and AudioManager listen to this.
@@ -51,6 +60,10 @@ public class MixingZone : MonoBehaviour
     private void Awake()
     {
         DisableAllMolecules();
+
+        // Make sure particle is off at start
+        if (mixParticleEffect != null)
+            mixParticleEffect.gameObject.SetActive(false);
     }
 
     private void Start()
@@ -114,28 +127,66 @@ public class MixingZone : MonoBehaviour
 
     // ─── Atom Enter / Exit ────────────────────────────────────────────────────
 
-    public void OnAtomEntered(AtomController atom)
+    /// <summary>
+    /// Returns true if the atom was accepted into the zone, false if the zone is full.
+    /// AtomController checks the return value to decide whether to apply glow.
+    /// </summary>
+    public bool OnAtomEntered(AtomController atom)
     {
-        if (atom == null) return;
-        if (!_atomsInZone.Contains(atom))
+        if (atom == null) return false;
+
+        if (_atomsInZone.Contains(atom)) return true; // already tracked
+
+        if (_atomsInZone.Count >= maxAtomsInZone)
         {
-            _atomsInZone.Add(atom);
-            Debug.Log($"[MixingZone] ++ {atom.atomType} entered. Total: {_atomsInZone.Count}");
+            Debug.Log($"[MixingZone] Zone full ({maxAtomsInZone} atoms). Rejected: {atom.atomType}");
+            return false;
         }
+
+        _atomsInZone.Add(atom);
+        Debug.Log($"[MixingZone] ++ {atom.atomType} entered. Total: {_atomsInZone.Count}/{maxAtomsInZone}");
+        return true;
     }
 
     public void OnAtomExited(AtomController atom)
     {
         if (atom == null) return;
         _atomsInZone.Remove(atom);
-        Debug.Log($"[MixingZone] -- {atom.atomType} exited. Total: {_atomsInZone.Count}");
+        Debug.Log($"[MixingZone] -- {atom.atomType} exited. Total: {_atomsInZone.Count}/{maxAtomsInZone}");
+    }
+
+    // ─── Reset Button ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Clears the mixing zone — all atoms currently inside are recycled back
+    /// to their pools and the zone is left empty and ready for a new attempt.
+    /// Called by ResetButton.TriggerReset().
+    /// </summary>
+    public void ResetZone()
+    {
+        if (_atomsInZone.Count == 0)
+        {
+            Debug.Log("[MixingZone] ResetZone called but zone is already empty.");
+            return;
+        }
+
+        Debug.Log($"[MixingZone] ResetZone — recycling {_atomsInZone.Count} atom(s).");
+
+        var toRecycle = new List<AtomController>(_atomsInZone);
+        _atomsInZone.Clear();
+
+        foreach (var atom in toRecycle)
+        {
+            if (atom != null)
+                atom.RecycleToPool();
+        }
     }
 
     // ─── Mix Button ───────────────────────────────────────────────────────────
 
     public void TryMix()
     {
-        Debug.Log($"[MixingZone] TryMix called. Atoms in zone: {_atomsInZone.Count}");
+        Debug.Log($"[MixingZone] TryMix called. Atoms in zone: {_atomsInZone.Count}/{maxAtomsInZone}");
 
         if (moleculeDatabase == null)
         {
@@ -161,7 +212,7 @@ public class MixingZone : MonoBehaviour
         string inputKey = MoleculeDatabase.BuildKey(atomTypes);
         Debug.Log($"[MixingZone] Input recipe key: '{inputKey}'");
 
-        // Rebuild lookup now in case Inspector changed since Start
+        // Rebuild lookup in case Inspector changed since Start
         RebuildPoolLookup();
 
         MoleculeRecipe recipe = moleculeDatabase.FindRecipe(atomTypes);
@@ -175,16 +226,54 @@ public class MixingZone : MonoBehaviour
 
         Debug.Log($"[MixingZone] Recipe matched: '{recipe.moleculeName}'");
 
-        // Recycle all atoms
+        // ── Play atom-consumed sound immediately ──────────────────────────────
+        if (AudioManager.Instance != null)
+            AudioManager.Instance.PlayMix();
+
+        // ── Recycle all atoms ─────────────────────────────────────────────────
         var toRecycle = new List<AtomController>(_atomsInZone);
         _atomsInZone.Clear();
         foreach (var atom in toRecycle)
             atom.RecycleToPool();
 
-        // Enable result molecule
+        // ── Particle effect ───────────────────────────────────────────────────
+        PlayMixParticle();
+
+        // ── Result molecule ───────────────────────────────────────────────────
         SpawnMoleculeResult(recipe);
 
+        // ── Broadcast (AudioManager + UIManager listen here) ──────────────────
         OnMixResult?.Invoke(recipe, true);
+    }
+
+    // ─── Particle Helpers ─────────────────────────────────────────────────────
+
+    private void PlayMixParticle()
+    {
+        if (mixParticleEffect == null) return;
+
+        // Position particle at result spawn point or above zone center
+        Vector3 pos = resultSpawnPoint != null
+            ? resultSpawnPoint.position
+            : transform.position + Vector3.up * 0.35f;
+
+        mixParticleEffect.transform.position = pos;
+        mixParticleEffect.gameObject.SetActive(true);
+        mixParticleEffect.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+        mixParticleEffect.Play();
+
+        float delay = particleDisableDelay > 0f
+            ? particleDisableDelay
+            : mixParticleEffect.main.duration + mixParticleEffect.main.startLifetime.constantMax;
+
+        StartCoroutine(DisableParticleAfterDelay(delay));
+    }
+
+    private IEnumerator DisableParticleAfterDelay(float delay)
+    {
+        yield return new WaitForSeconds(delay);
+        if (mixParticleEffect != null)
+            mixParticleEffect.gameObject.SetActive(false);
     }
 
     // ─── Result Molecule Activation ───────────────────────────────────────────
@@ -229,7 +318,7 @@ public class MixingZone : MonoBehaviour
             StartCoroutine(ReturnAfterDelay(entry, moleculeDisplayDuration));
     }
 
-    private System.Collections.IEnumerator ReturnAfterDelay(MoleculePoolEntry entry, float delay)
+    private IEnumerator ReturnAfterDelay(MoleculePoolEntry entry, float delay)
     {
         yield return new WaitForSeconds(delay);
         if (entry.moleculeObject != null)
