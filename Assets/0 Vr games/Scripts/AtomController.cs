@@ -146,33 +146,34 @@ public class AtomController : MonoBehaviour
     // ─── XR Grab Events ──────────────────────────────────────────────────────────
 
     private void OnGrabbed(SelectEnterEventArgs args)
+{
+    _isGrabbed = true;
+    SetHighlight(true);
+
+    // 🔊 PLAY SOUND
+    if (AudioManager.Instance != null)
+        AudioManager.Instance.PlayGrab();
+
+    if (_isIdleAtSpawnPoint && ownerPool != null)
     {
-        _isGrabbed = true;
-        SetHighlight(true);
-
-        // Notify pool to spawn a replacement
-        if (_isIdleAtSpawnPoint && ownerPool != null)
-        {
-            _isIdleAtSpawnPoint = false;
-            ownerPool.OnAtomGrabbed();
-        }
-
-        // KEY FIX: XRI snapshots and overrides Rigidbody state during selectEntered.
-        // We apply our physics settings ONE frame later so XRI's snapshot is already done
-        // and our values stick without being overwritten.
-        StartCoroutine(ApplyGrabbedPhysics());
+        _isIdleAtSpawnPoint = false;
+        ownerPool.OnAtomGrabbed();
     }
+
+    StartCoroutine(ApplyGrabbedPhysics());
+}
 
     private void OnReleased(SelectExitEventArgs args)
-    {
-        _isGrabbed = false;
-        SetHighlight(false);
+{
+    _isGrabbed = false;
+    SetHighlight(false);
 
-        // KEY FIX: XRI restores its cached Rigidbody snapshot on selectExited,
-        // which would re-enable isKinematic or disable gravity.
-        // Wait one frame for XRI to finish restoring, then apply our desired state.
-        StartCoroutine(ApplyReleasedPhysics());
-    }
+    // 🔊 PLAY SOUND
+    if (AudioManager.Instance != null)
+        AudioManager.Instance.PlayRelease();
+
+    StartCoroutine(ApplyReleasedPhysics());
+}
 
     // ─── Physics Coroutines (the core fix) ───────────────────────────────────────
 
